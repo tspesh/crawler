@@ -47,7 +47,7 @@ class SEOClusterCrawler:
     and output structured data for content cluster analysis.
     """
     
-    def __init__(self, start_url, max_pages=100, delay=0.5, content_limit=None, nav_threshold=0.8):
+    def __init__(self, start_url, max_pages=100, delay=0.5, content_limit=None, nav_threshold=0.8, allow_media=False):
         """
         Initialize the crawler with a starting URL and constraints.
         
@@ -57,7 +57,9 @@ class SEOClusterCrawler:
             delay (float): Delay between requests in seconds
             content_limit (int, optional): Maximum number of characters to extract for content
             nav_threshold (float): Threshold for global link detection (0.0-1.0)
+            allow_media (bool): Whether to allow crawling of image and video URLs
         """
+        self.allow_media = allow_media
         self.start_url = start_url
         self.max_pages = max_pages
         self.delay = delay
@@ -216,17 +218,34 @@ class SEOClusterCrawler:
     
     def extract_internal_links(self, html, base_url):
         """
-        Extracts all internal links from the HTML content.
+        Extracts all internal links from the HTML content,
+        filtering out image and video resources.
         
         Args:
             html (str): HTML content to parse
             base_url (str): The base URL to determine internal links
             
         Returns:
-            list: List of internal links found
+            list: List of internal links found (excluding media resources)
         """
         if not html:
             return []
+        
+        # Common image and video file extensions to filter out
+        media_extensions = [
+            # Images
+            '.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.bmp', '.ico', '.tiff', '.tif',
+            # Videos
+            '.mp4', '.webm', '.mov', '.avi', '.wmv', '.flv', '.mkv', '.m4v', '.mpg', '.mpeg'
+        ]
+        
+        # Common URL patterns that typically indicate media directories
+        media_patterns = [
+            '/images/', '/img/', '/gallery/', 
+            '/videos/', '/video/', '/media/',
+            '/assets/images', '/uploads/images',
+            '/wp-content/uploads/'
+        ]
         
         soup = BeautifulSoup(html, 'html.parser')
         internal_links = []
@@ -242,6 +261,14 @@ class SEOClusterCrawler:
             # Resolve relative URLs
             full_url = urljoin(base_url, href)
             parsed_url = urlparse(full_url)
+            
+            # Check if this is likely a media resource by extension
+            if any(parsed_url.path.lower().endswith(ext) for ext in media_extensions):
+                continue
+                
+            # Check if this is likely a media resource by URL pattern
+            if any(pattern in parsed_url.path.lower() for pattern in media_patterns):
+                continue
             
             # Filter out external links and ensure scheme is http/https
             if self.is_same_domain(full_url) and parsed_url.scheme in ('http', 'https'):
@@ -567,6 +594,8 @@ def main():
                       help='Output individual JSON files for each page (creates a directory)')
     parser.add_argument('--no-link-structure', '-n', action='store_true',
                       help='Exclude the link structure data from JSON output (smaller file size)')
+    parser.add_argument('--allow-media', action='store_true',
+                      help='Allow crawling of image and video URLs (by default these are filtered out)')
     
     args = parser.parse_args()
     
